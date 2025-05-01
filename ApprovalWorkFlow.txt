@@ -1,0 +1,1034 @@
+# School ERP System - Approval Workflow Architecture
+
+## 1. Introduction
+
+This document outlines the architecture for implementing approval workflows across various modules of the School ERP system. Approval workflows are essential for ensuring proper review and authorization of critical actions such as student admissions, leave requests, financial transactions, and academic changes.
+
+## 2. Approval Workflow Requirements
+
+### 2.1 Modules Requiring Approval Workflows
+
+Based on the School ERP PRD, the following modules require approval workflows:
+
+1. **Student Management**
+   - Admission applications
+   - Transfer requests
+   - Document verification
+
+2. **Staff Management**
+   - Leave applications
+   - Reimbursement requests
+   - Attendance regularization
+
+3. **Financial Management**
+   - Purchase requisitions
+   - Expense reimbursements
+   - Fee concession/scholarship approvals
+   - Budget allocations
+
+4. **Academic Management**
+   - Curriculum changes
+   - Exam rescheduling
+   - Grade modifications
+   - Course material approvals
+
+5. **Administrative Management**
+   - Facility booking requests
+   - Event approvals
+   - Policy changes
+   - Vendor onboarding
+
+### 2.2 Core Requirements
+
+- **Multi-level Approval**: Support for sequential and parallel approval chains
+- **Role-based Approvals**: Approvals based on organizational roles rather than specific individuals
+- **Delegation**: Ability to delegate approval authority temporarily
+- **Notifications**: Real-time notifications for pending approvals
+- **Audit Trail**: Complete history of approval actions
+- **SLA Tracking**: Monitoring of approval timelines
+- **Conditional Workflows**: Dynamic workflow paths based on request attributes
+- **Comments & Annotations**: Ability to add notes during approval process
+- **Mobile Support**: Approve/reject from mobile devices
+- **Bulk Actions**: Process multiple approval requests simultaneously
+
+## 3. Approval Workflow Architecture
+
+### 3.1 Architectural Approach
+
+The approval workflow system will follow a modular, event-driven architecture that can be integrated across different modules while maintaining a consistent user experience.
+
+<div style="text-align: center">
+  [Diagram: High-level approval workflow architecture]
+</div>
+
+### 3.2 Core Components
+
+#### 3.2.1 Workflow Engine
+
+The central component responsible for managing workflow definitions, state transitions, and process execution.
+
+**Key Responsibilities**:
+- Workflow definition management
+- Process instance creation and tracking
+- State management and transitions
+- Rule evaluation
+- SLA monitoring
+
+#### 3.2.2 Approval Request Service
+
+Handles creation, modification, and tracking of approval requests.
+
+**Key Responsibilities**:
+- Create approval requests
+- Track request status
+- Manage request metadata
+- Link requests to business objects
+- Provide request history
+
+#### 3.2.3 Approver Resolution Service
+
+Determines who can approve a particular request based on organizational structure, roles, and delegation rules.
+
+**Key Responsibilities**:
+- Identify appropriate approvers based on workflow definition
+- Handle role-based approver resolution
+- Manage approval hierarchies
+- Process delegation rules
+- Handle escalations and timeouts
+
+#### 3.2.4 Notification Service
+
+Manages notifications to approvers and requesters.
+
+**Key Responsibilities**:
+- Send notifications for pending approvals
+- Deliver reminders for aging requests
+- Notify requesters of status changes
+- Support multiple notification channels (in-app, email, mobile push)
+
+#### 3.2.5 Audit Service
+
+Maintains a detailed history of all approval-related actions.
+
+**Key Responsibilities**:
+- Record all approval actions
+- Track who performed each action and when
+- Maintain comments and justifications
+- Generate audit reports
+- Ensure compliance with record-keeping requirements
+
+### 3.3 Data Model
+
+#### 3.3.1 Workflow Definition
+
+```typescript
+interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  version: number;
+  moduleId: string;
+  objectType: string;
+  isActive: boolean;
+  stages: WorkflowStage[];
+  conditions: WorkflowCondition[];
+  createdAt: Date;
+  updatedAt: Date;
+  createdBy: string;
+  updatedBy: string;
+}
+
+interface WorkflowStage {
+  id: string;
+  name: string;
+  description: string;
+  order: number;
+  approvalType: 'SINGLE' | 'ALL' | 'ANY' | 'MAJORITY';
+  approvers: ApproverDefinition[];
+  timeoutDays: number;
+  escalationPolicy?: EscalationPolicy;
+  actions: WorkflowAction[];
+}
+
+interface ApproverDefinition {
+  type: 'ROLE' | 'USER' | 'DYNAMIC' | 'DEPARTMENT_HEAD';
+  value: string;
+  isRequired: boolean;
+}
+
+interface WorkflowCondition {
+  field: string;
+  operator: 'EQUALS' | 'NOT_EQUALS' | 'GREATER_THAN' | 'LESS_THAN' | 'CONTAINS' | 'NOT_CONTAINS';
+  value: any;
+  nextWorkflowId?: string;
+}
+
+interface WorkflowAction {
+  type: 'NOTIFICATION' | 'STATUS_UPDATE' | 'FIELD_UPDATE' | 'CUSTOM';
+  configuration: Record<string, any>;
+}
+
+interface EscalationPolicy {
+  timeoutDays: number;
+  escalateToType: 'ROLE' | 'USER' | 'DEPARTMENT_HEAD';
+  escalateToValue: string;
+}
+```
+
+#### 3.3.2 Approval Request
+
+```typescript
+interface ApprovalRequest {
+  id: string;
+  workflowId: string;
+  objectType: string;
+  objectId: string;
+  requestTitle: string;
+  requestDescription: string;
+  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  currentStageId: string;
+  requestData: Record<string, any>;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  dueDate?: Date;
+  submittedAt: Date;
+  completedAt?: Date;
+  requestedBy: string;
+  tenantId: string;
+}
+
+interface ApprovalStageInstance {
+  id: string;
+  requestId: string;
+  stageId: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SKIPPED';
+  startDate: Date;
+  endDate?: Date;
+  dueDate?: Date;
+  isCurrentStage: boolean;
+}
+
+interface ApprovalAction {
+  id: string;
+  requestId: string;
+  stageInstanceId: string;
+  action: 'APPROVE' | 'REJECT' | 'RETURN' | 'DELEGATE' | 'COMMENT';
+  actionBy: string;
+  actionAt: Date;
+  comment?: string;
+  attachments?: string[];
+  delegatedTo?: string;
+}
+
+interface ApprovalAssignment {
+  id: string;
+  requestId: string;
+  stageInstanceId: string;
+  assignedTo: string;
+  assignedToType: 'USER' | 'ROLE';
+  status: 'PENDING' | 'ACTIONED' | 'DELEGATED';
+  action?: 'APPROVE' | 'REJECT' | 'RETURN';
+  notificationSent: boolean;
+  lastNotificationAt?: Date;
+  delegatedFrom?: string;
+  delegatedAt?: Date;
+}
+```
+
+## 4. Frontend Implementation
+
+### 4.1 Approval Module Components
+
+#### 4.1.1 Approval Dashboard
+
+A centralized dashboard for all approval-related activities.
+
+```typescript
+// ApprovalDashboard.tsx
+const ApprovalDashboard = () => {
+  const { pendingApprovals, approvalHistory, statistics } = useApprovalDashboard();
+  
+  return (
+    <DashboardLayout>
+      <ApprovalStatistics data={statistics} />
+      <ApprovalTabs>
+        <Tab label="Pending Approvals">
+          <PendingApprovalList 
+            approvals={pendingApprovals} 
+            onBulkAction={handleBulkAction}
+          />
+        </Tab>
+        <Tab label="My Requests">
+          <MyRequestsList />
+        </Tab>
+        <Tab label="History">
+          <ApprovalHistoryList history={approvalHistory} />
+        </Tab>
+      </ApprovalTabs>
+    </DashboardLayout>
+  );
+};
+```
+
+#### 4.1.2 Approval Request Card
+
+Displays a single approval request with actions.
+
+```typescript
+// ApprovalRequestCard.tsx
+interface ApprovalRequestCardProps {
+  request: ApprovalRequest;
+  onApprove: (requestId: string, comment?: string) => void;
+  onReject: (requestId: string, comment: string) => void;
+  onViewDetails: (requestId: string) => void;
+}
+
+const ApprovalRequestCard: React.FC<ApprovalRequestCardProps> = ({
+  request,
+  onApprove,
+  onReject,
+  onViewDetails
+}) => {
+  const [comment, setComment] = useState('');
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const handleApprove = () => {
+    onApprove(request.id, comment);
+  };
+  
+  const handleReject = () => {
+    if (!comment.trim()) {
+      // Show error - comment required for rejection
+      return;
+    }
+    onReject(request.id, comment);
+  };
+  
+  return (
+    <Card>
+      <CardHeader
+        title={request.requestTitle}
+        subheader={`Requested by: ${request.requestedBy} on ${formatDate(request.submittedAt)}`}
+        action={
+          <PriorityIndicator priority={request.priority} />
+        }
+        onClick={() => setIsExpanded(!isExpanded)}
+      />
+      
+      <Collapse in={isExpanded}>
+        <CardContent>
+          <RequestSummary data={request.requestData} objectType={request.objectType} />
+          
+          <TextField
+            multiline
+            rows={2}
+            placeholder="Add a comment (required for rejection)"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            fullWidth
+            margin="normal"
+          />
+        </CardContent>
+        
+        <CardActions>
+          <Button 
+            variant="outlined" 
+            color="primary" 
+            onClick={() => onViewDetails(request.id)}
+          >
+            View Details
+          </Button>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={handleApprove}
+          >
+            Approve
+          </Button>
+          <Button 
+            variant="contained" 
+            color="error" 
+            onClick={handleReject}
+          >
+            Reject
+          </Button>
+        </CardActions>
+      </Collapse>
+    </Card>
+  );
+};
+```
+
+#### 4.1.3 Approval Status Timeline
+
+Displays the approval workflow progression.
+
+```typescript
+// ApprovalTimeline.tsx
+interface ApprovalTimelineProps {
+  request: ApprovalRequest;
+  stages: ApprovalStageInstance[];
+  actions: ApprovalAction[];
+}
+
+const ApprovalTimeline: React.FC<ApprovalTimelineProps> = ({
+  request,
+  stages,
+  actions
+}) => {
+  // Combine stages and actions into timeline items
+  const timelineItems = useMemo(() => {
+    return createTimelineItems(request, stages, actions);
+  }, [request, stages, actions]);
+  
+  return (
+    <div className="approval-timeline">
+      <h3>Approval Timeline</h3>
+      
+      <Timeline position="alternate">
+        {timelineItems.map((item) => (
+          <TimelineItem key={item.id}>
+            <TimelineSeparator>
+              <TimelineDot color={getStatusColor(item.status)} />
+              {!item.isLast && <TimelineConnector />}
+            </TimelineSeparator>
+            <TimelineContent>
+              <Paper elevation={3} className="timeline-paper">
+                <Typography variant="h6">{item.title}</Typography>
+                <Typography>{item.description}</Typography>
+                <Typography variant="caption">
+                  {item.date ? formatDateTime(item.date) : 'Pending'}
+                </Typography>
+                {item.comments && (
+                  <div className="timeline-comments">
+                    <Typography variant="body2">{item.comments}</Typography>
+                  </div>
+                )}
+              </Paper>
+            </TimelineContent>
+          </TimelineItem>
+        ))}
+      </Timeline>
+    </div>
+  );
+};
+```
+
+#### 4.1.4 Approval Configuration UI
+
+Interface for administrators to configure approval workflows.
+
+```typescript
+// WorkflowDesigner.tsx
+const WorkflowDesigner = () => {
+  const { workflowId } = useParams();
+  const { workflow, isLoading, updateWorkflow } = useWorkflowDefinition(workflowId);
+  const [activeStep, setActiveStep] = useState(0);
+  
+  if (isLoading) {
+    return <LoadingSpinner />;
+  }
+  
+  return (
+    <div className="workflow-designer">
+      <WorkflowStepper
+        activeStep={activeStep}
+        onStepChange={setActiveStep}
+        steps={[
+          'Basic Information',
+          'Workflow Stages',
+          'Conditions',
+          'Actions',
+          'Review & Publish'
+        ]}
+      />
+      
+      {activeStep === 0 && (
+        <WorkflowBasicInfo
+          workflow={workflow}
+          onChange={handleBasicInfoChange}
+        />
+      )}
+      
+      {activeStep === 1 && (
+        <WorkflowStagesEditor
+          stages={workflow.stages}
+          onChange={handleStagesChange}
+          onAddStage={handleAddStage}
+          onDeleteStage={handleDeleteStage}
+        />
+      )}
+      
+      {activeStep === 2 && (
+        <WorkflowConditionsEditor
+          conditions={workflow.conditions}
+          onChange={handleConditionsChange}
+          objectType={workflow.objectType}
+        />
+      )}
+      
+      {activeStep === 3 && (
+        <WorkflowActionsEditor
+          stages={workflow.stages}
+          onChange={handleActionsChange}
+        />
+      )}
+      
+      {activeStep === 4 && (
+        <WorkflowReview
+          workflow={workflow}
+          onPublish={handlePublishWorkflow}
+        />
+      )}
+      
+      <div className="workflow-designer-actions">
+        <Button
+          disabled={activeStep === 0}
+          onClick={() => setActiveStep((prev) => prev - 1)}
+        >
+          Back
+        </Button>
+        <Button
+          variant="contained"
+          onClick={() => 
+            activeStep === 4 
+              ? handlePublishWorkflow() 
+              : setActiveStep((prev) => prev + 1)
+          }
+        >
+          {activeStep === 4 ? 'Publish Workflow' : 'Next'}
+        </Button>
+      </div>
+    </div>
+  );
+};
+```
+
+### 4.2 Reusable Approval Components
+
+#### 4.2.1 Approval Button Component
+
+A reusable button component that can be integrated into any module for initiating approval processes.
+
+```typescript
+// ApprovalButton.tsx
+interface ApprovalButtonProps {
+  objectType: string;
+  objectId: string;
+  objectData: Record<string, any>;
+  title: string;
+  description?: string;
+  onApprovalInitiated?: (requestId: string) => void;
+  disabled?: boolean;
+  variant?: 'text' | 'outlined' | 'contained';
+  size?: 'small' | 'medium' | 'large';
+}
+
+const ApprovalButton: React.FC<ApprovalButtonProps> = ({
+  objectType,
+  objectId,
+  objectData,
+  title,
+  description,
+  onApprovalInitiated,
+  disabled = false,
+  variant = 'contained',
+  size = 'medium'
+}) => {
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [comment, setComment] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { mutate: initiateApproval } = useInitiateApproval();
+  
+  const handleSubmit = () => {
+    setIsSubmitting(true);
+    
+    initiateApproval(
+      {
+        objectType,
+        objectId,
+        objectData,
+        title,
+        description: description || title,
+        comment
+      },
+      {
+        onSuccess: (data) => {
+          setIsDialogOpen(false);
+          onApprovalInitiated?.(data.requestId);
+          showNotification('Approval request submitted successfully');
+        },
+        onError: (error) => {
+          showErrorNotification('Failed to submit approval request');
+        },
+        onSettled: () => {
+          setIsSubmitting(false);
+        }
+      }
+    );
+  };
+  
+  return (
+    <>
+      <Button
+        variant={variant}
+        size={size}
+        disabled={disabled}
+        startIcon={<ApprovalIcon />}
+        onClick={() => setIsDialogOpen(true)}
+      >
+        Submit for Approval
+      </Button>
+      
+      <Dialog
+        open={isDialogOpen}
+        onClose={() => setIsDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Submit for Approval</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will submit {title} for approval. Please provide any additional comments for the approvers.
+          </DialogContentText>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Comments"
+            multiline
+            rows={4}
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsDialogOpen(false)}>Cancel</Button>
+          <LoadingButton
+            onClick={handleSubmit}
+            loading={isSubmitting}
+            variant="contained"
+          >
+            Submit
+          </LoadingButton>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+};
+```
+
+#### 4.2.2 Approval Status Badge
+
+Visual indicator of current approval status.
+
+```typescript
+// ApprovalStatusBadge.tsx
+interface ApprovalStatusBadgeProps {
+  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  size?: 'small' | 'medium' | 'large';
+}
+
+const ApprovalStatusBadge: React.FC<ApprovalStatusBadgeProps> = ({
+  status,
+  size = 'medium'
+}) => {
+  const statusConfig = {
+    DRAFT: { color: 'default', label: 'Draft', icon: <EditIcon /> },
+    PENDING: { color: 'warning', label: 'Pending Approval', icon: <HourglassIcon /> },
+    APPROVED: { color: 'success', label: 'Approved', icon: <CheckCircleIcon /> },
+    REJECTED: { color: 'error', label: 'Rejected', icon: <CancelIcon /> },
+    CANCELLED: { color: 'default', label: 'Cancelled', icon: <BlockIcon /> }
+  };
+  
+  const config = statusConfig[status];
+  
+  return (
+    <Chip
+      icon={config.icon}
+      label={config.label}
+      color={config.color}
+      size={size}
+    />
+  );
+};
+```
+
+#### 4.2.3 Approval History Drawer
+
+Sidebar drawer to view approval history for any object.
+
+```typescript
+// ApprovalHistoryDrawer.tsx
+interface ApprovalHistoryDrawerProps {
+  objectType: string;
+  objectId: string;
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+const ApprovalHistoryDrawer: React.FC<ApprovalHistoryDrawerProps> = ({
+  objectType,
+  objectId,
+  isOpen,
+  onClose
+}) => {
+  const { 
+    approvalHistory, 
+    isLoading, 
+    error 
+  } = useApprovalHistory(objectType, objectId);
+  
+  return (
+    <Drawer
+      anchor="right"
+      open={isOpen}
+      onClose={onClose}
+      PaperProps={{ sx: { width: 400 } }}
+    >
+      <DrawerHeader>
+        <Typography variant="h6">Approval History</Typography>
+        <IconButton onClick={onClose}>
+          <CloseIcon />
+        </IconButton>
+      </DrawerHeader>
+      
+      <Divider />
+      
+      <DrawerContent>
+        {isLoading ? (
+          <LoadingSpinner />
+        ) : error ? (
+          <ErrorMessage error={error} />
+        ) : approvalHistory.length === 0 ? (
+          <EmptyState message="No approval history found" />
+        ) : (
+          <ApprovalTimeline
+            request={approvalHistory[0].request}
+            stages={approvalHistory[0].stages}
+            actions={approvalHistory[0].actions}
+          />
+        )}
+      </DrawerContent>
+    </Drawer>
+  );
+};
+```
+
+## 5. Module-Specific Implementation
+
+### 5.1 Student Admission Approval
+
+```typescript
+// AdmissionForm.tsx
+const AdmissionForm = () => {
+  const [formData, setFormData] = useState(initialFormData);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [admissionId, setAdmissionId] = useState<string | null>(null);
+  
+  const { mutate: saveAdmission } = useSaveAdmission();
+  
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    
+    saveAdmission(formData, {
+      onSuccess: (data) => {
+        setAdmissionId(data.id);
+        setIsSubmitting(false);
+      },
+      onError: () => {
+        setIsSubmitting(false);
+        showErrorNotification('Failed to save admission application');
+      }
+    });
+  };
+  
+  return (
+    <div className="admission-form">
+      <FormStepper
+        steps={['Student Details', 'Parent Details', 'Academic History', 'Documents', 'Review']}
+        activeStep={currentStep}
+        onStepChange={setCurrentStep}
+      />
+      
+      {/* Form steps components */}
+      
+      <div className="form-actions">
+        {currentStep > 0 && (
+          <Button onClick={() => setCurrentStep(prev => prev - 1)}>
+            Back
+          </Button>
+        )}
+        
+        {currentStep < 4 ? (
+          <Button 
+            variant="contained" 
+            onClick={() => setCurrentStep(prev => prev + 1)}
+          >
+            Next
+          </Button>
+        ) : (
+          <div className="submission-actions">
+            <Button
+              variant="outlined"
+              onClick={handleSaveAsDraft}
+              disabled={isSubmitting}
+            >
+              Save as Draft
+            </Button>
+            
+            {admissionId ? (
+              <ApprovalButton
+                objectType="admission"
+                objectId={admissionId}
+                objectData={formData}
+                title={`Admission Application for ${formData.studentName}`}
+                onApprovalInitiated={() => {
+                  showNotification('Admission submitted for approval');
+                  navigate('/admissions');
+                }}
+              />
+            ) : (
+              <LoadingButton
+                loading={isSubmitting}
+                variant="contained"
+                color="primary"
+                onClick={handleSubmit}
+              >
+                Save & Continue to Approval
+              </LoadingButton>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+```
+
+### 5.2 Staff Leave Approval
+
+```typescript
+// LeaveApplicationForm.tsx
+const LeaveApplicationForm = () => {
+  const { register, handleSubmit, formState: { errors } } = useForm<LeaveFormData>();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [leaveId, setLeaveId] = useState<string | null>(null);
+  
+  const { mutate: saveLeave } = useSaveLeaveApplication();
+  
+  const onSubmit = (data: LeaveFormData) => {
+    setIsSubmitting(true);
+    
+    saveLeave(data, {
+      onSuccess: (response) => {
+        setLeaveId(response.id);
+        setIsSubmitting(false);
+      },
+      onError: () => {
+        setIsSubmitting(false);
+        showErrorNotification('Failed to save leave application');
+      }
+    });
+  };
+  
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <Card>
+        <CardHeader title="Leave Application" />
+        <CardContent>
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth error={!!errors.leaveType}>
+                <InputLabel>Leave Type</InputLabel>
+                <Select
+                  {...register('leaveType', { required: 'Leave type is required' })}
+                >
+                  <MenuItem value="CASUAL">Casual Leave</MenuItem>
+                  <MenuItem value="SICK">Sick Leave</MenuItem>
+                  <MenuItem value="EARNED">Earned Leave</MenuItem>
+                  <MenuItem value="MATERNITY">Maternity Leave</MenuItem>
+                  <MenuItem value="PATERNITY">Paternity Leave</MenuItem>
+                </Select>
+                {errors.leaveType && <FormHelperText>{errors.leaveType.message}</FormHelperText>}
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <DateRangePicker
+                  startText="From Date"
+                  endText="To Date"
+                  value={[startDate, endDate]}
+                  onChange={handleDateChange}
+                  renderInput={(startProps, endProps) => (
+                    <>
+                      <TextField {...startProps} error={!!errors.startDate} />
+                      <Box sx={{ mx: 2 }}> to </Box>
+                      <TextField {...endProps} error={!!errors.endDate} />
+                    </>
+                  )}
+                />
+                {(errors.startDate || errors.endDate) && (
+                  <FormHelperText error>
+                    {errors.startDate?.message || errors.endDate?.message}
+                  </FormHelperText>
+                )}
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12}>
+              <TextField
+                label="Reason for Leave"
+                multiline
+                rows={4}
+                fullWidth
+                {...register('reason', { required: 'Reason is required' })}
+                error={!!errors.reason}
+                helperText={errors.reason?.message}
+              />
+            </Grid>
+            
+            <Grid item xs={12}>
+              <FileUpload
+                label="Attachments (if any)"
+                allowMultiple
+                onChange={handleFileChange}
+              />
+            </Grid>
+          </Grid>
+        </CardContent>
+        
+        <CardActions sx={{ justifyContent: 'flex-end', padding: 2 }}>
+          {!leaveId ? (
+            <>
+              <Button variant="outlined" onClick={handleSaveAsDraft}>
+                Save as Draft
+              </Button>
+              <LoadingButton
+                loading={isSubmitting}
+                type="submit"
+                variant="contained"
+                color="primary"
+              >
+                Save & Submit for Approval
+              </LoadingButton>
+            </>
+          ) : (
+            <ApprovalButton
+              objectType="leave"
+              objectId={leaveId}
+              objectData={getValues()}
+              title={`Leave Application from ${formatDate(getValues().startDate)} to ${formatDate(getValues().endDate)}`}
+              onApprovalInitiated={() => {
+                showNotification('Leave application submitted for approval');
+                navigate('/staff/leaves');
+              }}
+            />
+          )}
+        </CardActions>
+      </Card>
+    </form>
+  );
+};
+```
+
+### 5.3 Purchase Requisition Approval
+
+```typescript
+// PurchaseRequisitionForm.tsx
+const PurchaseRequisitionForm = () => {
+  const [requisition, setRequisition] = useState<PurchaseRequisition>({
+    title: '',
+    department: '',
+    items: [{ description: '', quantity: 1, estimatedCost: 0 }],
+    totalEstimatedCost: 0,
+    justification: '',
+    requiredByDate: null,
+    attachments: []
+  });
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [requisitionId, setRequisitionId] = useState<string | null>(null);
+  
+  const { mutate: saveRequisition } = useSavePurchaseRequisition();
+  
+  // Calculate total cost when items change
+  useEffect(() => {
+    const total = requisition.items.reduce(
+      (sum, item) => sum + (item.quantity * item.estimatedCost), 
+      0
+    );
+    setRequisition(prev => ({ ...prev, totalEstimatedCost: total }));
+  }, [requisition.items]);
+  
+  const handleAddItem = () => {
+    setRequisition(prev => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        { description: '', quantity: 1, estimatedCost: 0 }
+      ]
+    }));
+  };
+  
+  const handleRemoveItem = (index: number) => {
+    setRequisition(prev => ({
+      ...prev,
+      items: prev.items.filter((_, i) => i !== index)
+    }));
+  };
+  
+  const handleItemChange = (index: number, field: string, value: any) => {
+    setRequisition(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => 
+        i === index ? { ...item, [field]: value } : item
+      )
+    }));
+  };
+  
+  const handleSubmit = () => {
+    setIsSubmitting(true);
+    
+    saveRequisition(requisition, {
+      onSuccess: (data) => {
+        setRequisitionId(data.id);
+        setIsSubmitting(false);
+      },
+      onError: () => {
+        setIsSubmitting(false);
+        showErrorNotification('Failed to save purchase requisition');
+      }
+    });
+  };
+  
+  return (
+    <Card>
+      <CardHeader title="Purchase Requisition" />
+      <CardContent>
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <TextField
+              label="Requisition Title"
+              fullWidth
+              value={requisition.title}
+              onChange={(e) => setRequisition(prev => ({ ...prev, title: e.target.value }))}
+              required
+            />
+          </Grid>
+          
+          <Grid item xs={12} md={6}>
+            <FormControl fullWidth required>
+              <InputLabel>Department</InputLabel>
+              <Select
+                value={requisition.department}
+                onChange={(e) => setRequisition(prev => ({ ...prev, department: e.target.value }))}
+              >
+                <MenuItem value="ADMIN">Administration</MenuItem>
+                <MenuItem value="ACADEMICS">Academics</MenuItem>
+                <MenuItem value="FACILITIES">Facilities</MenuItem>
+                <MenuItem value="IT">Information Technology</MenuItem>
+                <MenuItem value="SPORTS">Sports</MenuItem>
+                <MenuItem value="LIBRARY">Library</MenuItem>
