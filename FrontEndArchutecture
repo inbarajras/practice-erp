@@ -1,0 +1,74 @@
+flowchart TB
+    %% End Users
+    USER([Users])
+    
+    %% Client Applications
+    subgraph CLIENTS["Client Applications"]
+        WEB[Web Application]
+        PWA[Progressive Web App]
+        MOBILE[Mobile Apps]
+        PORTAL[Custom School Portals]
+    end
+    
+    %% Frontend Architecture
+    subgraph FRONTEND["Frontend Architecture"]
+        %% Core Architecture
+        subgraph CORE["Core Architecture"]
+            SPA[Single Page Application]
+            ROUTER[Router]
+            STATE[State Management]
+            AUTH[Authentication Module]
+        end
+        
+        %% Component Library
+        subgraph COMPONENTS["Component Library"]
+            ATOMS[Atomic Components]
+            MOLECULES[Composite Components]
+            TEMPLATES[Page Templates]
+            LAYOUTS[Layout Components]
+        end
+        
+        %% Feature Modules
+        subgraph FEATURES["Feature Modules"]
+            DASH[Dashboard Module]
+            STUDENT[Student Module]
+            ACADEMIC[Academic Module]
+            FINANCE[Finance Module]
+            COMMS[Communication Module]
+        end
+        
+        %% Shared Services
+        subgraph SERVICES["Shared Services"]
+            API[API Client]
+            CACHE[Caching Service]
+            OFFLINE[Offline Storage]
+            ANALYTICS[Analytics Service]
+            NOTIF[Notification Service]
+        end
+    end
+    
+    %% Backend Interaction
+    subgraph BACKEND["Backend Integration"]
+        BFF[Backend for Frontend]
+        REST[REST APIs]
+        GRAPH[GraphQL APIs]
+        WS[WebSocket Service]
+    end
+    
+    %% Build & Delivery
+    subgraph BUILD["Build & Delivery"]
+        WEBPACK[Webpack/Vite]
+        STATIC[Static Assets]
+        DEPLOY[CI/CD Pipeline]
+        CDN[Content Delivery]
+    end
+    
+    %% Connections
+    USER --> CLIENTS
+    CLIENTS --> FRONTEND
+    CORE --- COMPONENTS
+    CORE --- FEATURES
+    CORE --- SERVICES
+    FEATURES --> COMPONENTS
+    SERVICES --> BACKEND
+    FRONTEND --> BUILD
